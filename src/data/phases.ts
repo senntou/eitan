@@ -1,10 +1,24 @@
+import type { Word } from './words'
+
+export const PHASE_SIZE = 10
+
 export type Phase = {
-  id: number
-  title: string
+  /** レベル内でのフェーズ番号(0始まり) */
+  index: number
+  /** 表示ラベル。例: "1-10" */
+  label: string
+  words: Word[]
 }
 
-// 1 phase = 目安100語 x 16phase = 1600語構想(現在はPhase 1のみ収録)
-export const PHASES: Phase[] = Array.from({ length: 16 }, (_, i) => ({
-  id: i + 1,
-  title: `Phase ${i + 1}`,
-}))
+/** レベル内の単語を order 順に PHASE_SIZE 語ずつのフェーズへ分割する */
+export function phasesForWords(levelWords: Word[]): Phase[] {
+  const sorted = [...levelWords].sort((a, b) => a.order - b.order)
+  const phases: Phase[] = []
+  for (let i = 0; i < sorted.length; i += PHASE_SIZE) {
+    const chunk = sorted.slice(i, i + PHASE_SIZE)
+    const start = chunk[0]?.order ?? i + 1
+    const end = chunk[chunk.length - 1]?.order ?? i + chunk.length
+    phases.push({ index: i / PHASE_SIZE, label: `${start}-${end}`, words: chunk })
+  }
+  return phases
+}
