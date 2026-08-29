@@ -1,4 +1,5 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import { PhaseList } from '../components/PhaseList'
 import { StudySettingsPanel } from '../components/StudySettingsPanel'
 import { levelById } from '../data/levels'
 import { words, type Word } from '../data/words'
@@ -10,12 +11,14 @@ type Props = {
   settings: StudySettings
   onChangeSettings: (settings: StudySettings) => void
   onStart: (words: Word[]) => void
+  onStartPhase: (phaseIndex: number, label: string, words: Word[], countMode: 'limited' | 'all') => void
   onBack: () => void
 }
 
-export function LevelDetail({ levelId, settings, onChangeSettings, onStart, onBack }: Props) {
+export function LevelDetail({ levelId, settings, onChangeSettings, onStart, onStartPhase, onBack }: Props) {
   const level = levelById(levelId)
   const { getMastery } = useProgress()
+  const [wholeLevelOpen, setWholeLevelOpen] = useState(false)
 
   const levelWords = useMemo(() => words.filter((w) => w.level === levelId), [levelId])
   const counts = useMemo(() => {
@@ -45,7 +48,15 @@ export function LevelDetail({ levelId, settings, onChangeSettings, onStart, onBa
         習得 {counts.mastered} / {levelWords.length} &nbsp; あやふや {counts.learning} &nbsp; 未学習 {counts.unseen}
       </p>
 
-      <StudySettingsPanel levelWords={levelWords} settings={settings} onChange={onChangeSettings} onStart={onStart} />
+      <PhaseList levelId={levelId} levelWords={levelWords} order={settings.order} onStart={onStartPhase} />
+
+      <button type="button" className="btn-text btn-advanced-toggle" onClick={() => setWholeLevelOpen((v) => !v)}>
+        {wholeLevelOpen ? '▾ レベル全体からまとめて出題を閉じる' : '▸ レベル全体からまとめて出題'}
+      </button>
+
+      {wholeLevelOpen && (
+        <StudySettingsPanel levelWords={levelWords} settings={settings} onChange={onChangeSettings} onStart={onStart} />
+      )}
     </div>
   )
 }
