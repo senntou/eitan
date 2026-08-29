@@ -1,91 +1,117 @@
-import { useMemo, useState } from 'react'
-import { PhaseSelect } from './components/PhaseSelect'
-import { StudyCard } from './components/StudyCard'
-import { StudySettings, type Direction } from './components/StudySettings'
+import { useState } from 'react'
+import { BottomTabBar, type MainTab } from './components/BottomTabBar'
 import { WordList } from './components/WordList'
-import { words, type Word } from './data/words'
-import { useStarredWords } from './hooks/useStarredWords'
+import { levelById } from './data/levels'
+import type { Word } from './data/words'
+import { Home } from './screens/Home'
+import { LevelDetail } from './screens/LevelDetail'
+import { Result } from './screens/Result'
+import { Review } from './screens/Review'
+import { Study, type SessionResult } from './screens/Study'
+import { ProgressProvider } from './storage/ProgressContext'
+import { loadSettings, saveSettings, type StudySettings } from './storage/settings'
 import './App.css'
 
-type Tab = 'study' | 'list'
+type Screen =
+  | { name: 'home' }
+  | { name: 'levelDetail'; levelId: number }
+  | { name: 'study'; levelLabel: string; words: Word[]; returnScreen: Screen }
+  | { name: 'result'; levelLabel: string; words: Word[]; results: SessionResult; returnScreen: Screen }
+  | { name: 'list' }
+  | { name: 'review' }
 
-type StudySession = {
-  words: Word[]
-  direction: Direction
-  index: number
-}
+function AppContent() {
+  const [screen, setScreen] = useState<Screen>({ name: 'home' })
+  const [settings, setSettings] = useState<StudySettings>(() => loadSettings())
+  const [listLevelId, setListLevelId] = useState(1)
 
-function App() {
-  const [tab, setTab] = useState<Tab>('study')
-  const [phase, setPhase] = useState(1)
-  const [session, setSession] = useState<StudySession | null>(null)
-  const { starredIds, toggleStar } = useStarredWords()
-
-  const phaseWords = useMemo(() => words.filter((w) => w.phase === phase), [phase])
-
-  const handlePhaseChange = (p: number) => {
-    setPhase(p)
-    setSession(null)
+  const updateSettings = (next: StudySettings) => {
+    setSettings(next)
+    saveSettings(next)
   }
 
-  const handleStart = (sessionWords: Word[], direction: Direction) => {
-    setSession({ words: sessionWords, direction, index: 0 })
+  const startStudy = (levelLabel: string, sessionWords: Word[], returnScreen: Screen) => {
+    if (sessionWords.length === 0) return
+    setScreen({ name: 'study', levelLabel, words: sessionWords, returnScreen })
   }
 
-  const handleSessionNext = () => {
-    setSession((s) => (s ? { ...s, index: (s.index + 1) % s.words.length } : s))
+  const startLevelStudy = (levelId: number, sessionWords: Word[]) => {
+    updateSettings({ ...settings, lastLevelId: levelId })
+    startStudy(levelById(levelId)?.title ?? '', sessionWords, { name: 'levelDetail', levelId })
   }
+
+  const mainTab: MainTab = screen.name === 'list' ? 'list' : screen.name === 'review' ? 'review' : 'home'
+  const showTabBar = screen.name === 'home' || screen.name === 'levelDetail' || screen.name === 'list' || screen.name === 'review'
 
   return (
     <div className="app">
-      <header className="app-header">
-        <h1>英単語帳</h1>
-        <nav className="tabs">
-          <button
-            type="button"
-            className={tab === 'study' ? 'active' : ''}
-            onClick={() => setTab('study')}
-          >
-            学習
-          </button>
-          <button
-            type="button"
-            className={tab === 'list' ? 'active' : ''}
-            onClick={() => setTab('list')}
-          >
-            一覧
-          </button>
-        </nav>
-        <PhaseSelect words={words} phase={phase} onChange={handlePhaseChange} />
-      </header>
-
       <main>
-        {tab === 'study' ? (
-          session ? (
-            <>
-              <StudyCard
-                word={session.words[session.index]}
-                direction={session.direction}
-                isStarred={starredIds.has(session.words[session.index].id)}
-                onToggleStar={toggleStar}
-                onNext={handleSessionNext}
-                index={session.index}
-                total={session.words.length}
-              />
-              <button type="button" className="btn-text" onClick={() => setSession(null)}>
-                設定に戻る
-              </button>
-            </>
-          ) : phaseWords.length === 0 ? (
-            <p className="empty-message">このPhaseの単語は準備中です。</p>
-          ) : (
-            <StudySettings phaseWords={phaseWords} starredIds={starredIds} onStart={handleStart} />
-          )
-        ) : (
-          <WordList words={phaseWords} starredIds={starredIds} onToggleStar={toggleStar} />
+        {screen.name === 'home' && (
+          <Home lastLevelId={settings.lastLevelId} onOpenLevel={(levelId) => setScreen({ name: 'levelDetail', levelId })} />
+        )}
+
+        {screen.name === 'levelDetail' && (
+          <LevelDetail
+            levelId={screen.levelId}
+            settings={settings}
+            onChangeSettings={updateSettings}
+            onStart={(sessionWords) => startLevelStudy(screen.levelId, sessionWords)}
+            onBack={() => setScreen({ name: 'home' })}
+          />
+        )}
+
+        {screen.name === 'study' && (
+          <Study
+            levelLabel={screen.levelLabel}
+            words={screen.words}
+            direction={settings.direction}
+            onFinish={(results) =>
+              setScreen({ name: 'result', levelLabel: screen.levelLabel, words: screen.words, results, returnScreen: screen.returnScreen })
+            }
+            onExit={() => setScreen(screen.returnScreen)}
+          />
+        )}
+
+        {screen.name === 'result' && (
+          <Result
+            levelLabel={screen.levelLabel}
+            words={screen.words}
+            results={screen.results}
+            onRepeatWrong={(wrongWords) => startStudy(screen.levelLabel, wrongWords, screen.returnScreen)}
+            onBackToLevel={() => setScreen(screen.returnScreen)}
+          />
+        )}
+
+        {screen.name === 'list' && <WordList levelId={listLevelId} onChangeLevel={setListLevelId} />}
+
+        {screen.name === 'review' && (
+          <Review
+            settings={settings}
+            onChangeSettings={updateSettings}
+            onStart={(sessionWords) => startStudy('復習リスト', sessionWords, { name: 'review' })}
+          />
         )}
       </main>
+
+      {showTabBar && (
+        <BottomTabBar
+          active={mainTab}
+          onChange={(tab) => {
+            if (tab === 'home') setScreen({ name: 'home' })
+            else if (tab === 'list') setScreen({ name: 'list' })
+            else setScreen({ name: 'review' })
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+function App() {
+  return (
+    <ProgressProvider>
+      <AppContent />
+    </ProgressProvider>
   )
 }
 

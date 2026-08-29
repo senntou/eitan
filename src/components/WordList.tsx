@@ -1,57 +1,90 @@
-import { useState } from 'react'
-import { CATEGORIES, categoryLabel, type CategoryId } from '../data/categories'
-import type { Word } from '../data/words'
+import { useMemo, useState } from 'react'
+import { LEVELS } from '../data/levels'
+import { tagShortLabel } from '../data/tags'
+import { words } from '../data/words'
+import { useProgress } from '../storage/ProgressContext'
 
 type Props = {
-  words: Word[]
-  starredIds: Set<number>
-  onToggleStar: (id: number) => void
+  levelId: number
+  onChangeLevel: (levelId: number) => void
 }
 
-export function WordList({ words, starredIds, onToggleStar }: Props) {
-  const [onlyStarred, setOnlyStarred] = useState(false)
-  const [category, setCategory] = useState<'all' | CategoryId>('all')
+const POS_LABEL: Record<string, string> = { v: '動', n: '名', adj: '形', adv: '副', prep: '前', phrase: '句' }
+const MASTERY_LABEL: Record<string, string> = { unseen: '未学習', learning: 'あやふや', mastered: '習得' }
 
-  const visibleWords = words
-    .filter((w) => category === 'all' || w.category === category)
-    .filter((w) => !onlyStarred || starredIds.has(w.id))
+export function WordList({ levelId, onChangeLevel }: Props) {
+  const [search, setSearch] = useState('')
+  const [expandedId, setExpandedId] = useState<number | null>(null)
+  const { getMastery, isStarred, toggleStar } = useProgress()
+
+  const levelWords = useMemo(() => words.filter((w) => w.level === levelId), [levelId])
+  const visibleWords = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return levelWords
+    return levelWords.filter((w) => w.word.toLowerCase().includes(query) || w.meaning.includes(query))
+  }, [levelWords, search])
 
   return (
     <div className="word-list">
-      <div className="list-filters">
-        <select value={category} onChange={(e) => setCategory(e.target.value as 'all' | CategoryId)}>
-          <option value="all">すべてのカテゴリ</option>
-          {CATEGORIES.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-        <label className="filter-toggle">
-          <input
-            type="checkbox"
-            checked={onlyStarred}
-            onChange={(e) => setOnlyStarred(e.target.checked)}
-          />
-          復習リストのみ表示
-        </label>
-      </div>
-      <ul>
-        {visibleWords.map((w) => (
-          <li key={w.id} className="word-row">
-            <button
-              type="button"
-              className={`btn-star-inline ${starredIds.has(w.id) ? 'is-starred' : ''}`}
-              onClick={() => onToggleStar(w.id)}
-              aria-label="復習リストに登録"
-            >
-              {starredIds.has(w.id) ? '★' : '☆'}
-            </button>
-            <span className="word-row-word">{w.word}</span>
-            <span className="word-row-meaning">{w.meaning}</span>
-            <span className="word-row-category">{categoryLabel(w.category)}</span>
-          </li>
+      <div className="list-level-tabs">
+        {LEVELS.map((level) => (
+          <button
+            key={level.id}
+            type="button"
+            className={`list-level-tab ${level.id === levelId ? 'active' : ''}`}
+            onClick={() => onChangeLevel(level.id)}
+          >
+            {level.title}
+          </button>
         ))}
+      </div>
+
+      <input
+        type="search"
+        className="word-search"
+        placeholder="単語・意味で検索"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        aria-label="単語を検索"
+      />
+
+      <ul>
+        {visibleWords.map((w) => {
+          const mastery = getMastery(w.id)
+          const expanded = expandedId === w.id
+          return (
+            <li key={w.id} className="word-row">
+              <button
+                type="button"
+                className="word-row-main"
+                onClick={() => setExpandedId(expanded ? null : w.id)}
+                aria-expanded={expanded}
+              >
+                <span className={`mastery-dot mastery-${mastery}`} aria-label={MASTERY_LABEL[mastery]} />
+                <span className="word-row-word">{w.word}</span>
+                <span className="word-row-pos">{POS_LABEL[w.pos]}</span>
+                <span className="word-row-meaning">{w.meaning}</span>
+                <span className="word-row-tags">{w.tags.map(tagShortLabel).join(' / ')}</span>
+              </button>
+              <button
+                type="button"
+                className={`btn-star-inline ${isStarred(w.id) ? 'is-starred' : ''}`}
+                onClick={() => toggleStar(w.id)}
+                aria-pressed={isStarred(w.id)}
+                aria-label={isStarred(w.id) ? '復習リストから外す' : '復習リストに追加'}
+              >
+                {isStarred(w.id) ? '★' : '☆'}
+              </button>
+              {expanded && (
+                <div className="word-row-detail">
+                  <p className="word-row-example">{w.example}</p>
+                  <p className="word-row-example-ja">{w.exampleJa}</p>
+                  {w.note && <p className="word-row-note">💡 {w.note}</p>}
+                </div>
+              )}
+            </li>
+          )
+        })}
       </ul>
       {visibleWords.length === 0 && <p className="empty-message">該当する単語がありません。</p>}
     </div>
