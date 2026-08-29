@@ -8,15 +8,18 @@ import { LevelDetail } from './screens/LevelDetail'
 import { Result } from './screens/Result'
 import { Review } from './screens/Review'
 import { Study, type SessionResult } from './screens/Study'
+import { PhaseProgressProvider, usePhaseProgress } from './storage/PhaseProgressContext'
 import { ProgressProvider } from './storage/ProgressContext'
 import { loadSettings, saveSettings, type StudySettings } from './storage/settings'
 import './App.css'
 
+type PhaseTag = { levelId: number; phaseIndex: number; label: string; countMode: 'limited' | 'all' }
+
 type Screen =
   | { name: 'home' }
   | { name: 'levelDetail'; levelId: number }
-  | { name: 'study'; levelLabel: string; words: Word[]; returnScreen: Screen }
-  | { name: 'result'; levelLabel: string; words: Word[]; results: SessionResult; returnScreen: Screen }
+  | { name: 'study'; levelLabel: string; words: Word[]; returnScreen: Screen; phase?: PhaseTag }
+  | { name: 'result'; levelLabel: string; words: Word[]; results: SessionResult; returnScreen: Screen; phase?: PhaseTag }
   | { name: 'list' }
   | { name: 'review' }
 
@@ -24,20 +27,33 @@ function AppContent() {
   const [screen, setScreen] = useState<Screen>({ name: 'home' })
   const [settings, setSettings] = useState<StudySettings>(() => loadSettings())
   const [listLevelId, setListLevelId] = useState(1)
+  const { recordPhaseCompletion } = usePhaseProgress()
 
   const updateSettings = (next: StudySettings) => {
     setSettings(next)
     saveSettings(next)
   }
 
-  const startStudy = (levelLabel: string, sessionWords: Word[], returnScreen: Screen) => {
+  const startStudy = (levelLabel: string, sessionWords: Word[], returnScreen: Screen, phase?: PhaseTag) => {
     if (sessionWords.length === 0) return
-    setScreen({ name: 'study', levelLabel, words: sessionWords, returnScreen })
+    setScreen({ name: 'study', levelLabel, words: sessionWords, returnScreen, phase })
   }
 
   const startLevelStudy = (levelId: number, sessionWords: Word[]) => {
     updateSettings({ ...settings, lastLevelId: levelId })
     startStudy(levelById(levelId)?.title ?? '', sessionWords, { name: 'levelDetail', levelId })
+  }
+
+  const startPhaseStudy = (
+    levelId: number,
+    phaseIndex: number,
+    label: string,
+    sessionWords: Word[],
+    countMode: 'limited' | 'all',
+  ) => {
+    updateSettings({ ...settings, lastLevelId: levelId })
+    const level = levelById(levelId)
+    startStudy(`${level?.title ?? ''} ${label}`, sessionWords, { name: 'levelDetail', levelId }, { levelId, phaseIndex, label, countMode })
   }
 
   const mainTab: MainTab = screen.name === 'list' ? 'list' : screen.name === 'review' ? 'review' : 'home'
@@ -56,6 +72,9 @@ function AppContent() {
             settings={settings}
             onChangeSettings={updateSettings}
             onStart={(sessionWords) => startLevelStudy(screen.levelId, sessionWords)}
+            onStartPhase={(phaseIndex, label, sessionWords, countMode) =>
+              startPhaseStudy(screen.levelId, phaseIndex, label, sessionWords, countMode)
+            }
             onBack={() => setScreen({ name: 'home' })}
           />
         )}
@@ -65,9 +84,22 @@ function AppContent() {
             levelLabel={screen.levelLabel}
             words={screen.words}
             direction={settings.direction}
-            onFinish={(results) =>
-              setScreen({ name: 'result', levelLabel: screen.levelLabel, words: screen.words, results, returnScreen: screen.returnScreen })
-            }
+            onFinish={(results) => {
+              if (screen.phase?.countMode === 'all') {
+                const total = screen.words.length
+                const known = screen.words.filter((w) => results[w.id] === 'known').length
+                const accuracy = total === 0 ? 0 : Math.round((known / total) * 100)
+                recordPhaseCompletion(screen.phase.levelId, screen.phase.phaseIndex, accuracy)
+              }
+              setScreen({
+                name: 'result',
+                levelLabel: screen.levelLabel,
+                words: screen.words,
+                results,
+                returnScreen: screen.returnScreen,
+                phase: screen.phase,
+              })
+            }}
             onExit={() => setScreen(screen.returnScreen)}
           />
         )}
@@ -110,7 +142,9 @@ function AppContent() {
 function App() {
   return (
     <ProgressProvider>
-      <AppContent />
+      <PhaseProgressProvider>
+        <AppContent />
+      </PhaseProgressProvider>
     </ProgressProvider>
   )
 }
