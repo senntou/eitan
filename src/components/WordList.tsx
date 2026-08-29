@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { CATEGORIES, categoryLabel, type CategoryId } from '../data/categories'
 import type { Word } from '../data/words'
 
 type Props = {
@@ -9,19 +10,32 @@ type Props = {
 
 export function WordList({ words, starredIds, onToggleStar }: Props) {
   const [onlyStarred, setOnlyStarred] = useState(false)
+  const [category, setCategory] = useState<'all' | CategoryId>('all')
 
-  const visibleWords = onlyStarred ? words.filter((w) => starredIds.has(w.id)) : words
+  const visibleWords = words
+    .filter((w) => category === 'all' || w.category === category)
+    .filter((w) => !onlyStarred || starredIds.has(w.id))
 
   return (
     <div className="word-list">
-      <label className="filter-toggle">
-        <input
-          type="checkbox"
-          checked={onlyStarred}
-          onChange={(e) => setOnlyStarred(e.target.checked)}
-        />
-        復習リストのみ表示
-      </label>
+      <div className="list-filters">
+        <select value={category} onChange={(e) => setCategory(e.target.value as 'all' | CategoryId)}>
+          <option value="all">すべてのカテゴリ</option>
+          {CATEGORIES.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+        <label className="filter-toggle">
+          <input
+            type="checkbox"
+            checked={onlyStarred}
+            onChange={(e) => setOnlyStarred(e.target.checked)}
+          />
+          復習リストのみ表示
+        </label>
+      </div>
       <ul>
         {visibleWords.map((w) => (
           <li key={w.id} className="word-row">
@@ -35,6 +49,7 @@ export function WordList({ words, starredIds, onToggleStar }: Props) {
             </button>
             <span className="word-row-word">{w.word}</span>
             <span className="word-row-meaning">{w.meaning}</span>
+            <span className="word-row-category">{categoryLabel(w.category)}</span>
           </li>
         ))}
       </ul>

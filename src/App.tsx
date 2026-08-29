@@ -1,19 +1,39 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { PhaseSelect } from './components/PhaseSelect'
 import { StudyCard } from './components/StudyCard'
+import { StudySettings, type Direction } from './components/StudySettings'
 import { WordList } from './components/WordList'
-import { words } from './data/words'
+import { words, type Word } from './data/words'
 import { useStarredWords } from './hooks/useStarredWords'
 import './App.css'
 
 type Tab = 'study' | 'list'
 
+type StudySession = {
+  words: Word[]
+  direction: Direction
+  index: number
+}
+
 function App() {
   const [tab, setTab] = useState<Tab>('study')
-  const [currentIndex, setCurrentIndex] = useState(0)
+  const [phase, setPhase] = useState(1)
+  const [session, setSession] = useState<StudySession | null>(null)
   const { starredIds, toggleStar } = useStarredWords()
 
-  const handleNext = () => {
-    setCurrentIndex((i) => (i + 1) % words.length)
+  const phaseWords = useMemo(() => words.filter((w) => w.phase === phase), [phase])
+
+  const handlePhaseChange = (p: number) => {
+    setPhase(p)
+    setSession(null)
+  }
+
+  const handleStart = (sessionWords: Word[], direction: Direction) => {
+    setSession({ words: sessionWords, direction, index: 0 })
+  }
+
+  const handleSessionNext = () => {
+    setSession((s) => (s ? { ...s, index: (s.index + 1) % s.words.length } : s))
   }
 
   return (
@@ -36,20 +56,33 @@ function App() {
             一覧
           </button>
         </nav>
+        <PhaseSelect words={words} phase={phase} onChange={handlePhaseChange} />
       </header>
 
       <main>
         {tab === 'study' ? (
-          <StudyCard
-            word={words[currentIndex]}
-            isStarred={starredIds.has(words[currentIndex].id)}
-            onToggleStar={toggleStar}
-            onNext={handleNext}
-            index={currentIndex}
-            total={words.length}
-          />
+          session ? (
+            <>
+              <StudyCard
+                word={session.words[session.index]}
+                direction={session.direction}
+                isStarred={starredIds.has(session.words[session.index].id)}
+                onToggleStar={toggleStar}
+                onNext={handleSessionNext}
+                index={session.index}
+                total={session.words.length}
+              />
+              <button type="button" className="btn-text" onClick={() => setSession(null)}>
+                設定に戻る
+              </button>
+            </>
+          ) : phaseWords.length === 0 ? (
+            <p className="empty-message">このPhaseの単語は準備中です。</p>
+          ) : (
+            <StudySettings phaseWords={phaseWords} starredIds={starredIds} onStart={handleStart} />
+          )
         ) : (
-          <WordList words={words} starredIds={starredIds} onToggleStar={toggleStar} />
+          <WordList words={phaseWords} starredIds={starredIds} onToggleStar={toggleStar} />
         )}
       </main>
     </div>
